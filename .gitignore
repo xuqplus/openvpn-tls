@@ -1,0 +1,8 @@
+openvpn/
+clients/
+*.ovpn
+*.gz
+*.key
+*.csr
+*.crt
+*.conf

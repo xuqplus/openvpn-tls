@@ -1,0 +1,2 @@
+#!/bin/bash
+docker run -itd --name ovpn --cap-add=NET_ADMIN -p 1194:1194/udp ovpn

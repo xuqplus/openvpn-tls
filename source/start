@@ -1,0 +1,13 @@
+#!/bin/bash
+mkdir /dev/net
+mknod /dev/net/tun c 10 200
+cd /etc/openvpn
+tmp=$(grep "^server " server.conf)
+tmp=${tmp%%[#;]*} 
+tmp=${tmp#* } 
+addr=${tmp%% *} 
+mask=${tmp##* }
+iptables -t nat -C POSTROUTING -s $addr/$mask -o eth0 -j MASQUERADE ||
+iptables -t nat -A POSTROUTING -s $addr/$mask -o eth0 -j MASQUERADE
+# iptables -t nat -L -n
+openvpn server.conf

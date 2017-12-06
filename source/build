@@ -1,0 +1,63 @@
+#!/bin/bash
+apt update -y
+apt install -y easy-rsa openvpn iptables
+cp /usr/share/easy-rsa /etc/openvpn -r 
+cd /etc/openvpn/easy-rsa && \
+source vars && \
+./clean-all && \
+./build-ca && \
+./build-key-server server && \
+./build-key client && \
+./build-dh && \
+openvpn --genkey --secret ta.key && \
+cp ta.key /etc/openvpn
+cd /etc/openvpn/easy-rsa/keys && \
+cp ca.crt server.crt server.key client.crt client.key dh2048.pem /etc/openvpn
+
+# config file
+cp /usr/share/doc/openvpn/examples/sample-config-files/server.conf.gz /etc/openvpn/server.conf.example.gz
+cp /usr/share/doc/openvpn/examples/sample-config-files/client.conf /etc/openvpn/client.conf.example
+cd /etc/openvpn
+
+echo "
+dev tun
+port 1194
+proto udp
+key-direction 0
+ca ca.crt
+cert server.crt
+key server.key  # This file should be kept secret
+dh dh2048.pem
+tls-auth ta.key
+server 10.8.0.0 255.255.255.0
+ifconfig-pool-persist ipp.txt
+push "block-outside-dns"
+push "redirect-gateway def1 bypass-dhcp"
+push "dhcp-option DNS 8.8.8.8"
+push "dhcp-option DNS 8.8.4.4"
+keepalive 10 120
+cipher AES-256-CBC   # AES
+comp-lzo
+user nobody
+group nogroup
+persist-key
+persist-tun
+status openvpn-status.log
+verb 3" > server.conf
+
+echo "
+client
+nobind
+dev tun
+ca ca.crt
+cert client.crt
+key client.key
+dh dh2048.pem
+tls-auth ta.key
+remote-cert-tls server
+remote vpn.mydomain 1194 udp
+key-direction 1
+;redirect-gateway def1
+cipher AES-256-CBC
+comp-lzo
+auth-nocache" > client.conf
