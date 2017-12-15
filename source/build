@@ -51,10 +51,10 @@ function genConfig () {
 	elif [[ -s /etc/openvpn/easy-rsa/easyrsa ]]; then
 		cd /etc/openvpn/easy-rsa && \
 		./easyrsa init-pki && \
-		./easyrsa build-ca && \
+		./easyrsa build-ca nopass && \
 		# openssl rsa -in abc.key -out abc.nopass.key
-		./easyrsa build-server-full server && \
-		./easyrsa build-client-full client && \
+		./easyrsa build-server-full server nopass && \
+		./easyrsa build-client-full client nopass && \
 		./easyrsa gen-dh && \
 		openvpn --genkey --secret ta.key && \
 		cp ta.key .. && \
@@ -153,6 +153,10 @@ if [ alpine = $OS ]; then
 	if [ $(apk info | grep -c easy-rsa) = 0 ]; then
 		apk add easy-rsa
 	fi
+	if [ $(apk info | grep -c bash) = 0 ]; then
+		apk add bash
+	fi
+	rm -rf /var/cache/apk/*
 	genConfig nogroup
 fi
 

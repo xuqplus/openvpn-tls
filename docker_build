@@ -8,9 +8,9 @@ if [ ! $OS ]; then
 	echo -e "\ta for alpine:latest"
 	echo -n "default [a]:"
 	read OS
-	if [ u = $OS ]; then
+	if [[ u = $OS ]]; then
 		OS="ubuntu:14.04"
-	elif [ c = $OS ]; then
+	elif [[ c = $OS ]]; then
 		OS="centos:6.8"
 	else
 		OS=alpine
@@ -44,7 +44,7 @@ fi
 echo "docker build -t $TAG ."
 docker run -itd --name $NAME --cap-add=NET_ADMIN $OS sh > /dev/null
 docker cp source/ $NAME:/root
-docker exec -it $NAME /root/source/build
+docker exec -it $NAME /bin/sh /root/source/build
 docker stop $NAME > /dev/null
 docker commit $NAME $TAG
 docker rm $NAME > /dev/null
