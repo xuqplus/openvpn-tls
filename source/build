@@ -1,25 +1,76 @@
 #!/bin/bash
-apt update -y
-apt install -y easy-rsa openvpn iptables
-cp /usr/share/easy-rsa /etc/openvpn -r 
-cd /etc/openvpn/easy-rsa && \
-source vars && \
-./clean-all && \
-./build-ca && \
-./build-key-server server && \
-./build-key client && \
-./build-dh && \
-openvpn --genkey --secret ta.key && \
-cp ta.key /etc/openvpn
-cd /etc/openvpn/easy-rsa/keys && \
-cp ca.crt server.crt server.key client.crt client.key dh2048.pem /etc/openvpn
+if [ $(cat /etc/*release* | grep -c ubuntu) != 0 ]; then
+	OS=ubuntu
+fi
+if [ $(cat /etc/*release* | grep -c centos) != 0 ]; then
+	OS=centos
+fi
+if [ $(cat /etc/*release* | grep -c alpine) != 0 ]; then
+	OS=alpine
+fi
+if [[ $OS ]]; then
+	echo "INFO Operating System is $OS - $(cat /etc/issue)"
+else
+	echo "ERROR only support ubuntu, centos or alpine" && exit
+fi
 
-# config file
-cp /usr/share/doc/openvpn/examples/sample-config-files/server.conf.gz /etc/openvpn/server.conf.example.gz
-cp /usr/share/doc/openvpn/examples/sample-config-files/client.conf /etc/openvpn/client.conf.example
-cd /etc/openvpn
-
-echo "
+function genConfig () {
+	GROUP=$1
+	echo "开始生成证书及server配置文件.."
+	if [[ ! -d /etc/openvpn/easy-rsa ]] ||
+		[[ ! -s /etc/openvpn/ca.crt ]] ||
+		[[ ! -s /etc/openvpn/server.conf ]] ||
+		[[ ! -s /etc/openvpn/server.crt ]] ||
+		[[ ! -s /etc/openvpn/server.key ]] ||
+		[[ ! -s /etc/openvpn/client.crt ]] ||
+		[[ ! -s /etc/openvpn/client.key ]] ||
+		[[ ! -s /etc/openvpn/dh2048.pem ]]; then
+		rm -rf /etc/openvpn/easy-rsa
+		if [[ -d /usr/share/easy-rsa/2.0 ]]; then
+			cp /usr/share/easy-rsa/2.0 /etc/openvpn/easy-rsa -r
+		else
+			cp /usr/share/easy-rsa /etc/openvpn/easy-rsa -r		
+		fi
+	fi
+	if [[ -s /etc/openvpn/easy-rsa/vars ]]; then
+		cd /etc/openvpn/easy-rsa && \
+		. ./vars && \
+		./clean-all && \
+		./build-ca && \
+		./build-key-server server && \
+		./build-key client && \
+		./build-dh && \
+		openvpn --genkey --secret ta.key && \
+		cp ta.key .. && \
+		cp keys/ca.crt .. && \
+		cp keys/dh2048.pem .. && \
+		cp keys/server.crt .. && \
+		cp keys/server.key .. && \
+		cp keys/client.crt .. && \
+		cp keys/client.key .. 
+	elif [[ -s /etc/openvpn/easy-rsa/easyrsa ]]; then
+		cd /etc/openvpn/easy-rsa && \
+		./easyrsa init-pki && \
+		./easyrsa build-ca && \
+		# openssl rsa -in abc.key -out abc.nopass.key
+		./easyrsa build-server-full server && \
+		./easyrsa build-client-full client && \
+		./easyrsa gen-dh && \
+		openvpn --genkey --secret ta.key && \
+		cp ta.key .. && \
+		cp pki/ca.crt .. && \
+		cp pki/dh.pem ../dh2048.pem && \
+		cp pki/issued/server.crt .. && \
+		cp pki/private/server.key .. && \
+		cp pki/issued/client.crt .. && \
+		cp pki/private/client.key ..
+	else
+		echo "ERROR easy-rsa version not support .." && exit
+	fi
+	
+	# config
+	cd /etc/openvpn
+	echo "
 dev tun
 port 1194
 proto udp
@@ -31,21 +82,21 @@ dh dh2048.pem
 tls-auth ta.key
 server 10.8.0.0 255.255.255.0
 ifconfig-pool-persist ipp.txt
-push "block-outside-dns"
-push "redirect-gateway def1 bypass-dhcp"
-push "dhcp-option DNS 8.8.8.8"
-push "dhcp-option DNS 8.8.4.4"
+push \"redirect-gateway def1 bypass-dhcp\"
+push \"block-outside-dns\"
+push \"dhcp-option DNS 8.8.8.8\"
+push \"dhcp-option DNS 8.8.4.4\"
 keepalive 10 120
 cipher AES-256-CBC   # AES
 comp-lzo
 user nobody
-group nogroup
+group $GROUP
 persist-key
 persist-tun
 status openvpn-status.log
-verb 3" > server.conf
-
-echo "
+verb 3
+" > server.conf
+	echo "
 client
 nobind
 dev tun
@@ -57,7 +108,51 @@ tls-auth ta.key
 remote-cert-tls server
 remote vpn.mydomain 1194 udp
 key-direction 1
-;redirect-gateway def1
 cipher AES-256-CBC
 comp-lzo
-auth-nocache" > client.conf
+auth-nocache
+" > client.conf
+	echo "证书及server配置文件生成完毕.."
+	return 0
+}
+
+if [ ubuntu = $OS ]; then
+	apt update -y
+	if [ $(dpkg -l | grep -c " openvpn ") = 0 ]; then
+		apt install -y openvpn
+	fi
+	if [ $(dpkg -l | grep -c " easy-rsa ") = 0 ]; then
+		apt install -y easy-rsa
+	fi
+	if [ $(dpkg -l | grep -c " iptables ") = 0 ]; then
+		apt install -y iptables
+	fi
+	genConfig nogroup
+fi
+
+if [ centos = $OS ]; then
+	if [ $(cat /etc/*release* | grep -c "release 7.*") != 0 ] || [ $(cat /etc/*release* | grep -c "release 6.*") != 0 ]; then
+		rpm -Uvh http://mirrors.kernel.org/fedora-epel/epel-release-latest-6.noarch.rpm
+	else
+		echo "ERROR  may not support the OS" && exit
+	fi
+	if [ $(yum list installed | grep -c openvpn) = 0 ]; then
+		yum install -y openvpn
+	fi
+	if [ $(yum list installed | grep -c easy-rsa) = 0 ]; then
+		yum install -y easy-rsa
+	fi
+	genConfig nobody
+fi
+
+if [ alpine = $OS ]; then
+	apk update
+	if [ $(apk info | grep -c openvpn) = 0 ]; then
+		apk add openvpn
+	fi
+	if [ $(apk info | grep -c easy-rsa) = 0 ]; then
+		apk add easy-rsa
+	fi
+	genConfig nogroup
+fi
+

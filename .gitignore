@@ -6,3 +6,5 @@ clients/
 *.csr
 *.crt
 *.conf
+*.gen_client
+*.docker_run

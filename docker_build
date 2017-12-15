@@ -1,24 +1,75 @@
 #!/bin/bash
 
-echo "开始生成证书及server配置文件.."
-if [ ! -d openvpn ] ||
-   [ ! -s openvpn/ca.crt ] ||
-   [ ! -s openvpn/server.crt ] ||
-   [ ! -s openvpn/server.key ] ||
-   [ ! -s openvpn/client.crt ] ||
-   [ ! -s openvpn/client.key ] ||
-   [ ! -s openvpn/dh2048.pem ] ||
-   [ ! -s openvpn/ta.key ] ||
-   [ ! -s openvpn/server.conf ] ||
-   [ ! -s openvpn/client.conf ];
-then
-  rm -rf openvpn && mkdir openvpn
-  docker run -it --rm -v $(pwd)/source:/root/ovpn -v $(pwd)/openvpn:/etc/openvpn ubuntu:14.04 bash /root/ovpn/build
-  echo "证书及server配置文件生成完毕.."
-else
-  echo "证书及server配置文件已经存在.."
+OS=$1
+if [ ! $OS ]; then
+	echo "choose container OS"
+	echo -e "\tu for ubuntu:14.04"
+	echo -e "\tc for centos:6.8"
+	echo -e "\ta for alpine:latest"
+	echo -n "default [a]:"
+	read OS
+	if [ u = $OS ]; then
+		OS="ubuntu:14.04"
+	elif [ c = $OS ]; then
+		OS="centos:6.8"
+	else
+		OS=alpine
+	fi
+	echo "> container OS set to $OS"
 fi
 
-echo "开始构建镜像文件.."
-docker build -t ovpn .
-echo "构建镜像构建完毕.."
+NAME=$2
+if [ ! $NAME ]; then
+	echo -n "please input container name:"
+	read NAME
+	if [ ! $NAME ]; then
+		echo "container name not set" && exit
+	fi
+	if [ $(docker ps -a --format {{.Names}} | grep -c "^${NAME}$") != 0 ]; then
+		echo "ERROR container name $NAME is being use" && exit
+	fi
+	echo "> container name set to $NAME"
+fi
+
+TAG=$3
+if [ ! $TAG ]; then
+	echo -n "please input docker image name:"
+	read TAG
+	if [ ! $TAG ]; then
+		echo "ERROR image name not set" && exit
+	fi
+	echo "> image name set to $TAG"
+fi
+
+echo "docker build -t $TAG ."
+docker run -itd --name $NAME --cap-add=NET_ADMIN $OS sh > /dev/null
+docker cp source/ $NAME:/root
+docker exec -it $NAME /root/source/build
+docker stop $NAME > /dev/null
+docker commit $NAME $TAG
+docker rm $NAME > /dev/null
+echo "done."
+
+# docker_gen_client
+echo "#!/bin/bash
+CLIENT=\$1
+if [ ! \$CLIENT ]; then
+	echo -n \"please input client name[client1]:\"
+	read CLIENT
+	if [ ! \$CLIENT ]; then
+		CLIENT=client1
+	fi
+fi
+docker exec -it $NAME /root/source/gen_client \$CLIENT
+docker cp $NAME:/root/source/\$CLIENT.tar.gz .
+" > ${NAME}.gen_client
+
+# docker_run
+echo "#!/bin/bash
+docker run -itd --name $NAME --cap-add=NET_ADMIN -p 1196:1194/udp $TAG /root/source/start
+" > ${NAME}.docker_run
+
+chmod 705 ${NAME}.gen_client ${NAME}.docker_run
+echo "./${NAME}.docker_run to start openvpn server, and"
+echo "./${NAME}.gen_client to create client config file"
+

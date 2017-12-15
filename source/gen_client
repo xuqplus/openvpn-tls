@@ -1,65 +1,99 @@
 #!/bin/bash
+if [ $(cat /etc/*release* | grep -c ubuntu) != 0 ]; then
+	OS=ubuntu
+fi
+if [ $(cat /etc/*release* | grep -c centos) != 0 ]; then
+	OS=centos
+fi
+if [ $(cat /etc/*release* | grep -c alpine) != 0 ]; then
+	OS=alpine
+fi
+if [[ ! $OS ]]; then
+	echo "ERROR only support ubuntu, centos or alpine"
+	exit
+fi
+
+PWD0=/root/source
+cd /etc
+if [[ ! -d openvpn ]]; then
+	echo "ERROR you should install openvpn before .." && exit
+fi
+cd /etc/openvpn
+if [[ ! -d easy-rsa ]]; then
+	echo "ERROR you should copy easy-rsa to /etc/openvpn before .." && exit
+fi
+if [[ ! -s server.conf ]]; then
+	echo "ERROR you should create /etc/openvpn/server.conf before .." && exit
+fi
 CLIENT=$1
 if [ ! $CLIENT ]; then
-  echo -n "please input client name[client1]:"
-  read CLIENT
-  if [ ! $CLIENT ]; then
-    CLIENT=client1
-  fi
+	echo -n "please input client name[client1]:"
+	read CLIENT
+	if [ ! $CLIENT ]; then
+		CLIENT=client1
+	fi
 fi
-echo -n "server's ip or domain[vpn.mydomain]:"
-read DOMAIN
+DOMAIN=$2
 if [ ! $DOMAIN ]; then
-  DOMAIN="vpn.mydomain"
+	echo -n "server's ip or domain[vpn.mydomain]:"
+	read DOMAIN
+	if [ ! $DOMAIN ]; then
+		DOMAIN="vpn.mydomain"
+	fi
+fi
+PORT=$3
+if [ ! $PORT ]; then
+	echo -n "server's port[1194]:"
+	read PORT
+	if [ ! $PORT ]; then
+		PORT=1194
+	fi
 fi
 
-PWD0=$(pwd)
-cd /etc/openvpn/easy-rsa
-if [ ! -d keys ] || [ ! -s keys/ca.crt ]; then
-  echo "you should build the CA before .." && exit
-fi
-
-cd keys
-if [ -s $CLIENT.tar.gz ]; then
-  echo "$CLIENT's certs already exists .." && cp $CLIENT.tar.gz $PWD0 && exit
-else
-  rm -rf $CLIENT.*
-  cd /etc/openvpn/easy-rsa && \
-  source vars && \
-  ./build-key $CLIENT
-fi
-
-
-echo "create $CLIENT.conf .."
-cd /etc/openvpn
-tmp=$(grep ^proto server.conf)
-if [[ $tmp ]]; then
-  tmp=${tmp#* }
-  PROTO=${tmp%% *}
-else
-  echo "protocol of vpn server not set .. " && exit
-fi
-tmp=$(grep ^port server.conf)
-if [[ $tmp ]]; then
-  tmp=${tmp#* }
-  PORT=${tmp%% *}
-else
-  echo "port of vpn server not set .." && exit
-fi
-tmp=$(grep ^dev server.conf)
-if [[ $tmp ]]; then
-  tmp=${tmp#* }
-  DEV=${tmp%% *}
-else
-  echo "dev tun/tap config isn't right .." && exit
-fi
-tmp=$(grep ^tls-auth server.conf)
-if [[ $tmp ]]; then
-  tmp=${tmp#* }         # delete the left
-  TLS_AUTH=${tmp%% *}   # delete the right
-fi
-
-echo "
+if [ ubuntu = $OS ] || [ centos = $OS ]; then
+	cd /etc/openvpn/easy-rsa
+	if [ ! -d keys ] || [ ! -s keys/ca.crt ]; then
+		echo "ERROR you should build the CA before .." && exit
+	fi
+	cd keys
+	if [ -s $CLIENT.tar.gz ]; then
+		echo "INFO $CLIENT's certs already exists .." && cp $CLIENT.tar.gz $PWD0 && exit
+	else
+		rm -rf $CLIENT.*
+		cd /etc/openvpn/easy-rsa && \
+		source vars && \
+		./build-key $CLIENT
+		if [ ! -s keys/$CLIENT.crt ] || [ ! -s keys/$CLIENT.key ] || [ ! -s keys/$CLIENT.csr ]; then
+			echo "ERROR create certs fail .." && exit
+		else
+			cp keys/$CLIENT.crt ..
+			cp keys/$CLIENT.key ..
+		fi
+	fi
+	echo "INFO creating $CLIENT.conf .."
+	cd /etc/openvpn
+	tmp=$(grep ^proto server.conf)
+	if [[ $tmp ]]; then
+		tmp=${tmp#* }
+		PROTO=${tmp%% *}
+	else
+		echo "ERROR protocol of vpn server not set .. " && exit
+	fi
+	tmp=$(grep ^dev server.conf)
+	if [[ $tmp ]]; then
+		tmp=${tmp#* }
+		DEV=${tmp%% *}
+	else
+		echo "ERROR dev tun/tap config isn't right .." && exit
+	fi
+	tmp=$(grep ^tls-auth server.conf)
+	if [[ $tmp ]]; then
+		tmp=${tmp#* }         # delete the left
+		TLS_AUTH=${tmp%% *}   # delete the right
+		cp $TLS_AUTH .
+		TLS_AUTH=${TLS_AUTH##*/}    # in case multi-level dir
+	fi
+	echo "
 client
 nobind
 dev $DEV
@@ -73,17 +107,14 @@ comp-lzo
 verb 3
 ca ca.crt
 cert $CLIENT.crt
-key $CLIENT.key" > /etc/openvpn/easy-rsa/keys/$CLIENT.conf
-if [[ $TLS_AUTH ]]; then
-  cp -rf $TLS_AUTH /etc/openvpn/easy-rsa/keys/
-  TLS_AUTH=${TLS_AUTH##*/}    # in case multi-level dir
-  echo "tls-auth $TLS_AUTH 1" >> /etc/openvpn/easy-rsa/keys/$CLIENT.conf
-fi
+key $CLIENT.key
+" > $CLIENT.conf
+	if [[ $TLS_AUTH ]]; then
+		echo "tls-auth $TLS_AUTH 1" >> $CLIENT.conf
+	fi
 
-
-echo "create $CLIENT.ovpn .."
-cd /etc/openvpn/easy-rsa/keys
-echo "
+	echo "INFO creating $CLIENT.ovpn .."
+	echo "
 client
 nobind
 dev $DEV
@@ -102,18 +133,24 @@ $(cat $CLIENT.crt)
 </cert>
 <key>
 $(cat $CLIENT.key)
-</key>" > $CLIENT.ovpn
-if [[ $TLS_AUTH ]]; then
-  echo "<tls-auth>
+</key>
+" > $CLIENT.ovpn
+	if [[ $TLS_AUTH ]]; then
+		echo "<tls-auth>
 $(cat $TLS_AUTH)
-</tls-auth>" >> $CLIENT.ovpn
+</tls-auth>
+" >> $CLIENT.ovpn
+	fi
+
+	echo "INFO copy files .."
+	tar czvf $CLIENT.tar.gz ca.crt $CLIENT.crt $CLIENT.key $CLIENT.conf $CLIENT.ovpn $TLS_AUTH > /dev/null
+	rm $CLIENT.crt $CLIENT.key $CLIENT.conf $CLIENT.ovpn
+	cp $CLIENT.tar.gz easy-rsa/keys
+	mv $CLIENT.tar.gz $PWD0
+	echo "done .." && exit
 fi
 
+if [ alpine = $OS ]; then
 
-echo "copy files .."
-rm $CLIENT.csr
-tar czvf $CLIENT.tar.gz ca.crt $CLIENT.* $TLS_AUTH > /dev/null
-rm $CLIENT.crt $CLIENT.key $CLIENT.conf $CLIENT.ovpn
-cp $CLIENT.tar.gz $PWD0
+fi
 
-echo "done .."
