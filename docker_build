@@ -5,7 +5,7 @@ if [ ! $OS ]; then
 	echo "choose container OS"
 	echo -e "\tu for ubuntu:14.04"
 	echo -e "\tc for centos:6.8"
-	echo -e "\ta for alpine:latest"
+	echo -e "\ta for alpine:3.5"
 	echo -n "default [a]:"
 	read OS
 	if [[ u = $OS ]]; then
@@ -13,7 +13,7 @@ if [ ! $OS ]; then
 	elif [[ c = $OS ]]; then
 		OS="centos:6.8"
 	else
-		OS=alpine
+		OS="alpine:3.5"
 	fi
 	echo "> container OS set to $OS"
 fi
@@ -44,6 +44,12 @@ fi
 echo "docker build -t $TAG ."
 docker run -itd --name $NAME --cap-add=NET_ADMIN $OS sh > /dev/null
 docker cp source/ $NAME:/root
+if [[ a = $OS ]]; then
+        docker exec -it $NAME /bin/sh /root/source/build
+else
+        docker exec -it $NAME /root/source/build
+fi
+
 docker exec -it $NAME /bin/sh /root/source/build
 docker stop $NAME > /dev/null
 docker commit $NAME $TAG
