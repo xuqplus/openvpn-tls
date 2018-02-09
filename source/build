@@ -27,9 +27,11 @@ function genConfig () {
 		[[ ! -s /etc/openvpn/dh2048.pem ]]; then
 		rm -rf /etc/openvpn/easy-rsa
 		if [[ -d /usr/share/easy-rsa/2.0 ]]; then
-			cp /usr/share/easy-rsa/2.0 /etc/openvpn/easy-rsa -r
+			cp /usr/share/easy-rsa/2.0/ /etc/openvpn/easy-rsa -r
+		elif [[ -d /usr/share/easy-rsa/3.0 ]]; then
+			cp /usr/share/easy-rsa/3.0/ /etc/openvpn/easy-rsa -r
 		else
-			cp /usr/share/easy-rsa /etc/openvpn/easy-rsa -r		
+			cp /usr/share/easy-rsa/ /etc/openvpn/easy-rsa -r		
 		fi
 	fi
 	if [[ -s /etc/openvpn/easy-rsa/vars ]]; then

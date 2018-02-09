@@ -50,12 +50,11 @@ if [ ! $PORT ]; then
 	fi
 fi
 
-if [ ubuntu = $OS ] || [ centos = $OS ]; then
+if [ -d /etc/openvpn/easy-rsa/keys ]; then
 	cd /etc/openvpn/easy-rsa
-	if [ ! -d keys ] || [ ! -s keys/ca.crt ]; then
+	if [ ! -s keys/ca.crt ]; then
 		echo "ERROR you should build the CA before .." && exit
 	fi
-	cd keys
 	if [ -s $CLIENT.tar.gz ]; then
 		echo "INFO $CLIENT's certs already exists .." && cp $CLIENT.tar.gz $PWD0 && exit
 	else
@@ -150,9 +149,9 @@ $(cat $TLS_AUTH)
 	echo "done .." && exit
 fi
 
-if [ alpine = $OS ]; then
+if [ -d /etc/openvpn/easy-rsa/pki ]; then
 	cd /etc/openvpn/easy-rsa
-	if [ ! -d pki ] || [ ! -s pki/ca.crt ]; then
+	if [ ! -s pki/ca.crt ]; then
 		echo "ERROR you should build the CA before .." && exit
 	fi
 	if [ -s $CLIENT.tar.gz ]; then
